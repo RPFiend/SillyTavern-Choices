@@ -109,18 +109,29 @@ async function renderSuggestions(choices, messageIndex, skipSave = false) {
         return;
     }
 
+    // Remove any existing choices for this message
     $message.find('.st-choices-container').remove();
-    const $container = $('<div class="st-choices-container"></div>');
 
+    const $container = $('<div>')
+        .addClass('st-choices-container');
+
+    // Main choice buttons
     choices.forEach((text, index) => {
-        $('<button class="st-choices-btn menu_button"></button>')
+        $('<button>')
+            .addClass('st-choices-btn menu_button interactable')
+            .attr({ tabindex: '0', role: 'button' })
             .text(`${index + 1}. ${text}`)
             .on('click', () => handleChoiceClick(messageIndex, text))
             .appendTo($container);
     });
 
-    $('<button class="st-choices-regen menu_button interactable" tabindex="0" role="button">↻ Regenerate Suggestions</button>')
+    // Regenerate button (manual retry)
+    $('<button>')
+        .addClass('st-choices-regen menu_button interactable')
+        .attr({ tabindex: '0', role: 'button' })
+        .text('↻ Regenerate suggestions')
         .on('click', async () => {
+            console.log(`[${EXTENSION_NAME}] ↻ Manual regenerate clicked for message ${messageIndex}`);
             await clearChoicesForMessage(messageIndex);
             $message.find('.st-choices-container').remove();
             await generateSuggestions();
