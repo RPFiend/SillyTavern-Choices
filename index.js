@@ -10,8 +10,11 @@ let isGenerating = false;
 
 // Trigger ST's chat save directly via the global function
 function triggerChatSave() {
-    if (typeof window.saveChat === 'function') {
-        window.saveChat();
+    const context = SillyTavern.getContext();
+    if (typeof context.saveChat === 'function') {
+        context.saveChat();
+    } else if (typeof context.saveSettingsDebounced === 'function') {
+        context.saveSettingsDebounced();
     }
 }
 
@@ -122,14 +125,7 @@ function renderSuggestions(suggestions, messageId, fromPersistence = false) {
         if (!chat[messageId].extra) chat[messageId].extra = {};
         chat[messageId].extra.st_choices = suggestions;
         console.log(`[${extensionName}] Saved suggestions to message ${messageId}:`, chat[messageId].extra.st_choices);
-        // Trigger ST's chat save directly via the global function
-        if (typeof window.saveChat === 'function') {
-            window.saveChat();
-        } else {
-            // Fallback: fire the chat save event
-            const { eventSource, event_types } = SillyTavern.getContext();
-            eventSource.emit(event_types.CHAT_CHANGED);
-        }
+        triggerChatSave();
     }
 
     setTimeout(() => {
