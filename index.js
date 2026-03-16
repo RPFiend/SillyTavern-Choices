@@ -296,6 +296,7 @@ SlashCommandParser.addCommandObject(SlashCommand.fromProps({
 // Initialize extension
 $(document).ready(async function() {
     console.log(`[${extensionName}] Initializing...`);
+    console.log(`[${extensionName}] Active API: ${SillyTavern.getContext().mainApi}`);
 
     loadSettings();
     renderSettings();
@@ -304,35 +305,53 @@ $(document).ready(async function() {
     const { eventSource, event_types } = SillyTavern.getContext();
 
     async function populatePresetDropdown() {
-        const context = SillyTavern.getContext();
         const $dropdown = $('#st_choices_completion_preset');
-
-        // Clear existing options except default
         $dropdown.find('option:not([value=""])').remove();
 
-        // Use ST's context to get available presets for current API
-        const presets = context.getPresetList ? context.getPresetList() : null;
+        try {
+            // Use ST's oai_settings or textgenerationwebui_settings presets
+            // by reading directly from active API's preset select element
+            const context = SillyTavern.getContext();
 
-        if (presets && presets.length > 0) {
-            presets.forEach(preset => {
-                $dropdown.append(
-                    $('<option>').val(preset).text(preset)
-                );
-            });
-        } else {
-            // Fallback: read from the correct ST preset selector for current API type
-            const $stPreset = $('#completionprompts_preset, #settings_preset, #chat_completion_preset').first();
-            $stPreset.find('option').each(function() {
-                const val = $(this).val();
-                const text = $(this).text();
-                if (val && val !== 'gui') {
-                    $dropdown.append($('<option>').val(val).text(text));
+            // ST stores active API type here
+            const apiType = context.mainApi;
+
+            // Map API type to correct preset dropdown ST uses internally
+            const selectorMap = {
+                'openai': '#model_openai_select, #settings_preset_openai',
+                'textgenerationwebui': '#settings_preset_textgenerationwebui',
+                'kobold': '#settings_preset_kobold',
+                'novel': '#settings_preset_novel',
+                'claudeai': '#settings_preset_claude',
+            };
+
+            // Try mapped selector first, then fall back to any visible preset dropdown
+            const selector = selectorMap[apiType] || '.preset_select:visible';
+            const $activePreset = $(selector).first();
+
+            if ($activePreset.length > 0) {
+                $activePreset.find('option').each(function() {
+                    const val = $(this).val();
+                    const text = $(this).text();
+                    if (val && val !== 'gui' && val !== '') {
+                        $dropdown.append($('<option>').val(val).text(text));
+                    }
+                });
+            }
+
+            // Also try context.getPresetList as a secondary source
+            if ($dropdown.find('option').length <= 1 && context.getPresetList) {
+                const presets = context.getPresetList();
+                if (presets?.length > 0) {
+                    presets.forEach(p => $dropdown.append($('<option>').val(p).text(p)));
                 }
-            });
+            }
+        } catch(e) {
+            console.warn(`[${extensionName}] Could not populate preset dropdown:`, e);
         }
 
-        // Restore saved selection
         $dropdown.val(extensionSettings.completion_preset || '');
+        console.log(`[${extensionName}] Preset dropdown populated, active API: ${SillyTavern.getContext().mainApi}`);
     }
 
     // Call it on init and whenever the API type changes
