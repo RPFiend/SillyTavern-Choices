@@ -104,17 +104,17 @@ function renderSuggestions(suggestions) {
 
     // Get the last message element
     const lastMessage = chat[chat.length - 1];
-    const messageId = lastMessage.mesId || `mes_${chat.length - 1}`;
-    const messageElement = document.getElementById(messageId);
-
-    if (!messageElement) {
-        console.log(`[${extensionName}] Message element not found: ${messageId}`);
+    const messageId = lastMessage.mesId;
+    const messageElement = $(`.mes[mesid="${messageId}"]`);
+    
+    if (messageElement.length === 0) {
+        console.error('[ST-Choices] Message element not found for mesid:', messageId);
         return;
     }
 
     // Remove existing suggestions for this message
-    const existingContainer = messageElement.querySelector('.cyoa-suggestions-container');
-    if (existingContainer) {
+    const existingContainer = messageElement.find('.cyoa-suggestions-container');
+    if (existingContainer.length > 0) {
         existingContainer.remove();
     }
 
@@ -139,8 +139,8 @@ function renderSuggestions(suggestions) {
         container.appendChild(button);
     });
 
-    // Append to message
-    messageElement.appendChild(container);
+    // Append to message after .mes_text
+    messageElement.find('.mes_text').after(container);
 
     console.log(`[${extensionName}] Rendered ${suggestions.length} suggestion buttons`);
 }
