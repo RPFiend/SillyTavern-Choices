@@ -226,22 +226,27 @@ async function generateSuggestions() {
 // ---------------------------------------------------------------------------
 
 function parseSuggestions(response) {
-    const strategies = [
-        () => [...response.matchAll(/<suggestion_\d+>([\s\S]*?)<\/suggestion_\d+>/g)].map(m => m[1].trim()),
-        () => [...response.matchAll(/<(?:option|choice)_\d+>([\s\S]*?)<\/(?:option|choice)_\d+>/g)].map(m => m[1].trim()),
-        () => [...response.matchAll(/`([^`\n]+)`/g)].map(m => m[1].trim()),
-        () => [...response.matchAll(/^"([^"]+)"$/gm)].map(m => m[1].trim()),
-        () => [...response.matchAll(/^\d+[.)]\s+(.+)$/gm)].map(m => m[1].trim()),
-        () => [...response.matchAll(/^[-*]\s+(.+)$/gm)].map(m => m[1].trim()),
-    ];
+    const suggestions = [];
 
-    for (const strategy of strategies) {
-        try {
-            const results = strategy().filter(s => s.length > 0);
-            if (results.length) return results;
-        } catch (_) { /* try next */ }
+    // Match <suggestion_N>content</suggestion_N> and capture only the inner content
+    const tagPattern = /<suggestion_(\d+)>([\s\S]*?)<\/suggestion_\1>/gi;
+    let match;
+    while ((match = tagPattern.exec(response)) !== null) {
+        const text = match[2].trim();
+        if (text) suggestions.push(text);
     }
-    return [];
+
+    // Fallback: numbered list format (1. text or 1) text)
+    if (suggestions.length === 0) {
+        const listPattern = /^\s*\d+[.)]\s+(.+)$/gm;
+        while ((match = listPattern.exec(response)) !== null) {
+            const text = match[1].trim();
+            if (text) suggestions.push(text);
+        }
+    }
+
+    console.log(`[${EXTENSION_NAME}] Parsed suggestions:`, suggestions);
+    return suggestions;
 }
 
 // ---------------------------------------------------------------------------
