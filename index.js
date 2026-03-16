@@ -52,7 +52,7 @@ async function generateSuggestions() {
     }
 
     try {
-        console.log(`[${extensionName}] Generating ${extensionSettings.num_responses} suggestions...`);
+        console.log('[ST-Choices] Generating suggestions...');
 
         // Prepare the prompt with suggestion number
         let prompt = extensionSettings.llm_prompt.replace('{{suggestionNumber}}', extensionSettings.num_responses);
@@ -65,7 +65,7 @@ async function generateSuggestions() {
         );
 
         if (response) {
-            console.log(`[${extensionName}] Suggestions received:`, response);
+            console.log('[ST-Choices] Raw response:', response);
             parseAndRenderSuggestions(response);
         } else {
             console.log(`[${extensionName}] No response from generateQuietPrompt`);
@@ -98,6 +98,8 @@ function parseAndRenderSuggestions(response) {
 // Render suggestion buttons in chat
 function renderSuggestions(suggestions) {
     const { chat } = SillyTavern.getContext();
+    
+    console.log('[ST-Choices] Rendering buttons:', suggestions);
     
     if (chat.length === 0) {
         console.log(`[${extensionName}] No messages in chat to append to`);
@@ -296,6 +298,8 @@ $(document).ready(function() {
 
     // Listen for AI messages
     eventSource.on(event_types.MESSAGE_RECEIVED, function(data) {
+        console.log('[ST-Choices] Extension loaded, event listener registered');
+        console.log('[ST-Choices] MESSAGE_RECEIVED fired');
         console.log(`[${extensionName}] Message received:`, data);
         
         // Only generate after AI messages (user messages have 'is_user' or similar)
