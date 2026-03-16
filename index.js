@@ -5,6 +5,9 @@ import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/Sla
 const extensionName = "SillyTavern-Choices";
 const extensionId = "sillytavern_choices";
 
+// Abort flag to prevent concurrent generation
+let isGenerating = false;
+
 const defaultSettings = {
     enabled: false,
     llm_prompt: `Stop the roleplay now and provide a response with {{suggestionNumber}} brief distinct single-sentence suggestions for the next story beat on {{user}} perspective. Ensure each suggestion aligns with its corresponding description: 1. Eases tension and improves the protagonist's situation 2. Creates or increases tension and worsens the protagonist's situation 3. Leads directly but believably to a wild twist or super weird event 4. Slowly moves the story forward without ending the current scene 5. Pushes the story forward, potentially ending the current scene if feasible Each suggestion surrounded by \`\` tags. E.g: suggestion_1 suggestion_2 ... Do not include any other content in your response.`,
@@ -40,30 +43,34 @@ function saveSettings() {
 
 // Generate suggestions using generateQuietPrompt
 async function generateSuggestions() {
-    const { generateQuietPrompt, chat } = SillyTavern.getContext();
-    const messageId = chat.length - 1; // Capture HERE, before await
+    if (isGenerating) return;
+    isGenerating = true;
     
-    if (!extensionSettings.enabled) {
-        console.log(`[${extensionName}] Extension is disabled, skipping suggestion generation`);
-        return;
-    }
-
-    if (chat.length === 0) {
-        console.log(`[${extensionName}] No messages in chat, skipping suggestion generation`);
-        return;
-    }
-
     try {
+        const { chat, generateQuietPrompt, extensionSettings } = SillyTavern.getContext();
+        const settings = extensionSettings['SillyTavern-Choices'];
+        if (!settings?.enabled) {
+            console.log(`[${extensionName}] Extension is disabled, skipping suggestion generation`);
+            return;
+        }
+
+        if (chat.length === 0) {
+            console.log(`[${extensionName}] No messages in chat, skipping suggestion generation`);
+            return;
+        }
+
+        const messageId = chat.length - 1;
+
         console.log('[ST-Choices] Generating suggestions...');
 
         // Prepare the prompt with suggestion number
-        let prompt = extensionSettings.llm_prompt.replace('{{suggestionNumber}}', extensionSettings.num_responses);
+        let prompt = settings.llm_prompt.replace('{{suggestionNumber}}', settings.num_responses);
 
         const response = await generateQuietPrompt(
             prompt,
             false,
-            extensionSettings.apply_wi_an,
-            extensionSettings.response_length
+            settings.apply_wi_an,
+            settings.response_length
         );
 
         if (!response) {
@@ -81,6 +88,8 @@ async function generateSuggestions() {
         renderSuggestions(suggestions, messageId);
     } catch (error) {
         console.error(`[${extensionName}] Error generating suggestions:`, error);
+    } finally {
+        isGenerating = false;
     }
 }
 
@@ -109,7 +118,10 @@ function parseSuggestions(response) {
     for (const strategy of strategies) {
         try {
             const results = strategy().filter(s => s.length > 0);
-            if (results.length > 0) return results;
+            if (results.length > 0) {
+                console.log('[ST-Choices] Parsed suggestions:', results);
+                return results;
+            }
         } catch (e) { continue; }
     }
 
@@ -144,41 +156,13 @@ function renderSuggestions(suggestions, messageId) {
 }
 
 // Handle suggestion button click
-function handleSuggestionClick(suggestion) {
-    const { substituteParamsExtended } = SillyTavern.getContext();
-    
-    console.log(`[${extensionName}] Suggestion clicked:`, suggestion);
-
-    try {
-        // Build the impersonation prompt
-        let impersonatePrompt = extensionSettings.llm_prompt_impersonate.replace('{{suggestionText}}', suggestion);
-
-        // Substitute parameters using ST's extended substitution
-        impersonatePrompt = substituteParamsExtended(impersonatePrompt);
-
-        // Set the text in the input area
-        const textarea = document.getElementById('send_textarea');
-        if (textarea) {
-            textarea.value = impersonatePrompt;
-            
-            // Trigger input event to update UI
-            const event = new Event('input', { bubbles: true });
-            textarea.dispatchEvent(event);
-
-            // Click the send button
-            const sendButton = document.getElementById('send_but');
-            if (sendButton) {
-                sendButton.click();
-                console.log(`[${extensionName}] Send button triggered`);
-            } else {
-                console.log(`[${extensionName}] Send button not found`);
-            }
-        } else {
-            console.log(`[${extensionName}] Textarea not found`);
-        }
-    } catch (error) {
-        console.error(`[${extensionName}] Error handling suggestion click:`, error);
-    }
+function handleSuggestionClick(suggestionText) {
+    const { extensionSettings } = SillyTavern.getContext();
+    const settings = extensionSettings['SillyTavern-Choices'];
+    const impersonatePrompt = settings.llm_prompt_impersonate.replace('{{suggestionText}}', suggestionText);
+    console.log('[ST-Choices] Impersonation prompt:', impersonatePrompt);
+    $('#send_textarea').val(impersonatePrompt).trigger('input');
+    $('#send_but').trigger('click');
 }
 
 // Render settings panel
@@ -282,6 +266,10 @@ $(document).ready(function() {
 
     // Get eventSource from context
     const { eventSource, event_types } = SillyTavern.getContext();
+
+    // Listen for generation stopped/ended to reset abort flag
+    eventSource.on(event_types.GENERATION_STOPPED, () => { isGenerating = false; });
+    eventSource.on(event_types.GENERATION_ENDED, () => { isGenerating = false; });
 
     // Listen for AI messages
     eventSource.on(event_types.MESSAGE_RECEIVED, function(data) {
