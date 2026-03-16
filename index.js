@@ -47,9 +47,8 @@ async function generateSuggestions() {
     isGenerating = true;
     
     try {
-        const { chat, generateQuietPrompt, extensionSettings } = SillyTavern.getContext();
-        const settings = extensionSettings['SillyTavern-Choices'];
-        if (!settings?.enabled) {
+        const { chat, generateQuietPrompt } = SillyTavern.getContext();
+        if (!extensionSettings?.enabled) {
             console.log(`[${extensionName}] Extension is disabled, skipping suggestion generation`);
             return;
         }
@@ -63,14 +62,14 @@ async function generateSuggestions() {
 
         console.log('[ST-Choices] Generating suggestions...');
 
-        // Prepare the prompt with suggestion number
-        let prompt = settings.llm_prompt.replace('{{suggestionNumber}}', settings.num_responses);
+        // Prepare prompt with suggestion number
+        let prompt = extensionSettings.llm_prompt.replace('{{suggestionNumber}}', extensionSettings.num_responses);
 
         const response = await generateQuietPrompt(
             prompt,
             false,
-            settings.apply_wi_an,
-            settings.response_length
+            extensionSettings.apply_wi_an,
+            extensionSettings.response_length
         );
 
         if (!response) {
@@ -157,9 +156,7 @@ function renderSuggestions(suggestions, messageId) {
 
 // Handle suggestion button click
 function handleSuggestionClick(suggestionText) {
-    const { extensionSettings } = SillyTavern.getContext();
-    const settings = extensionSettings['SillyTavern-Choices'];
-    const impersonatePrompt = settings.llm_prompt_impersonate.replace('{{suggestionText}}', suggestionText);
+    const impersonatePrompt = extensionSettings.llm_prompt_impersonate.replace('{{suggestionText}}', suggestionText);
     console.log('[ST-Choices] Impersonation prompt:', impersonatePrompt);
     $('#send_textarea').val(impersonatePrompt).trigger('input');
     $('#send_but').trigger('click');
