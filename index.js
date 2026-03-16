@@ -294,31 +294,57 @@ SlashCommandParser.addCommandObject(SlashCommand.fromProps({
 }));
 
 // Initialize extension
-$(document).ready(function() {
+$(document).ready(async function() {
     console.log(`[${extensionName}] Initializing...`);
 
     loadSettings();
     renderSettings();
 
-    // Populate preset dropdown from ST's existing preset list
-    $('#settings_preset option').each(function() {
-        const val = $(this).val();
-        const text = $(this).text();
-        if (val) {
-            $('#st_choices_completion_preset').append(
-                $('<option>').val(val).text(text)
-            );
+    // Get eventSource from context
+    const { eventSource, event_types } = SillyTavern.getContext();
+
+    async function populatePresetDropdown() {
+        const context = SillyTavern.getContext();
+        const $dropdown = $('#st_choices_completion_preset');
+
+        // Clear existing options except default
+        $dropdown.find('option:not([value=""])').remove();
+
+        // Use ST's context to get available presets for current API
+        const presets = context.getPresetList ? context.getPresetList() : null;
+
+        if (presets && presets.length > 0) {
+            presets.forEach(preset => {
+                $dropdown.append(
+                    $('<option>').val(preset).text(preset)
+                );
+            });
+        } else {
+            // Fallback: read from the correct ST preset selector for current API type
+            const $stPreset = $('#completionprompts_preset, #settings_preset, #chat_completion_preset').first();
+            $stPreset.find('option').each(function() {
+                const val = $(this).val();
+                const text = $(this).text();
+                if (val && val !== 'gui') {
+                    $dropdown.append($('<option>').val(val).text(text));
+                }
+            });
         }
-    });
-    $('#st_choices_completion_preset').val(extensionSettings.completion_preset || '');
+
+        // Restore saved selection
+        $dropdown.val(extensionSettings.completion_preset || '');
+    }
+
+    // Call it on init and whenever the API type changes
+    await populatePresetDropdown();
+    eventSource.on(event_types.CHAT_CHANGED, populatePresetDropdown);
+
+    // Bind preset change event
     $('#st_choices_completion_preset').on('change', function() {
         extensionSettings.completion_preset = $(this).val();
         const { saveSettingsDebounced } = SillyTavern.getContext();
         saveSettingsDebounced();
     });
-
-    // Get eventSource from context
-    const { eventSource, event_types } = SillyTavern.getContext();
 
     // Listen for generation stopped/ended to reset abort flag
     eventSource.on(event_types.GENERATION_STOPPED, () => { isGenerating = false; });
