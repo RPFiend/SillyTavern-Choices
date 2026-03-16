@@ -67,7 +67,10 @@ async function generateSuggestions() {
 
         if (response) {
             console.log('[ST-Choices] Raw response:', response);
-            parseAndRenderSuggestions(response);
+            const suggestions = parseSuggestions(response);
+            if (suggestions.length > 0) {
+                renderSuggestions(suggestions);
+            }
         } else {
             console.log(`[${extensionName}] No response from generateQuietPrompt`);
         }
@@ -77,23 +80,15 @@ async function generateSuggestions() {
 }
 
 // Parse suggestions from LLM response
-function parseAndRenderSuggestions(response) {
-    // Parse suggestions wrapped in backticks
-    const regex = /`([^`]+)`/g;
-    const matches = [];
+function parseSuggestions(response) {
+    const suggestions = [];
+    const regex = /<suggestion_\d+>([\s\S]*?)<\/suggestion_\d+>/g;
     let match;
-    
     while ((match = regex.exec(response)) !== null) {
-        matches.push(match[1].trim());
+        const text = match[1].trim();
+        if (text) suggestions.push(text);
     }
-
-    console.log(`[${extensionName}] Parsed ${matches.length} suggestions`);
-
-    if (matches.length > 0) {
-        renderSuggestions(matches);
-    } else {
-        console.log(`[${extensionName}] No suggestions found in response`);
-    }
+    return suggestions;
 }
 
 // Render suggestion buttons in chat
