@@ -148,6 +148,17 @@ function renderSuggestions(suggestions, messageId) {
             $btn.on('click', () => handleSuggestionClick(text));
             $container.append($btn);
         });
+
+        // Add Regenerate Suggestions button
+        const $regenBtn = $('<button>')
+            .addClass('st-choices-regen menu_button interactable')
+            .attr({ tabindex: '0', role: 'button' })
+            .text('↻ Regenerate Suggestions')
+            .on('click', async () => {
+                $('.st-choices-container').remove();
+                await generateSuggestions();
+            });
+        $container.append($regenBtn);
         
         $message.find('.mes_text').after($container);
         console.log(`[${extensionName}] Rendered ${suggestions.length} suggestion buttons`);
@@ -267,6 +278,14 @@ $(document).ready(function() {
     // Listen for generation stopped/ended to reset abort flag
     eventSource.on(event_types.GENERATION_STOPPED, () => { isGenerating = false; });
     eventSource.on(event_types.GENERATION_ENDED, () => { isGenerating = false; });
+
+    // Clear suggestions on swipe and generation start
+    eventSource.on(event_types.MESSAGE_SWIPED, () => {
+        $('.st-choices-container').remove();
+    });
+    eventSource.on(event_types.GENERATION_STARTED, () => {
+        $('.st-choices-container').remove();
+    });
 
     // Listen for AI messages
     eventSource.on(event_types.MESSAGE_RECEIVED, function(data) {

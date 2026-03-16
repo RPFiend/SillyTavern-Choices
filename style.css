@@ -60,6 +60,23 @@
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
+#chat .st-choices-regen {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    padding: 6px 12px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 11px;
+    opacity: 0.6;
+    text-align: center;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+#chat .st-choices-regen:hover {
+    opacity: 1;
+}
+
 .cyoa-settings { margin: 10px 0; }
 .cyoa-settings-content { padding: 15px; }
 .cyoa-setting-group { margin: 15px 0; }
