@@ -109,37 +109,43 @@ async function renderSuggestions(choices, messageIndex, skipSave = false) {
         return;
     }
 
-    // Remove any existing choices for this message
     $message.find('.st-choices-container').remove();
+    const $container = $('<div class="st-choices-container"></div>');
 
-    const $container = $('<div>')
-        .addClass('st-choices-container');
-
-    // Main choice buttons
     choices.forEach((text, index) => {
-        $('<button>')
-            .addClass('st-choices-btn menu_button interactable')
-            .attr({ tabindex: '0', role: 'button' })
+        $('<button class="st-choices-btn menu_button"></button>')
             .text(`${index + 1}. ${text}`)
             .on('click', () => handleChoiceClick(messageIndex, text))
             .appendTo($container);
     });
 
-    // Regenerate button (manual retry)
-    $('<button>')
-        .addClass('st-choices-regen menu_button interactable')
-        .attr({ tabindex: '0', role: 'button' })
-        .text('↻ Regenerate suggestions')
+    $message.find('.mes_text').after($container);
+    console.log(`[${EXTENSION_NAME}] ✅ Rendered ${choices.length} choices on message ${messageIndex}`);
+}
+
+function renderFallbackButton(messageIndex) {
+    const $message = $(`.mes[mesid="${messageIndex}"]`);
+    if (!$message.length) {
+        console.error(`[${EXTENSION_NAME}] ❌ renderFallbackButton: could not find mesid=${messageIndex}`);
+        return;
+    }
+
+    // Remove any existing choices for this message
+    $message.find('.st-choices-container').remove();
+
+    const $container = $('<div class="st-choices-container"></div>');
+
+    // Fallback button for manual retry
+    $('<button class="st-choices-regen menu_button interactable" tabindex="0" role="button">⚡ Generate Suggestions</button>')
         .on('click', async () => {
-            console.log(`[${EXTENSION_NAME}] ↻ Manual regenerate clicked for message ${messageIndex}`);
-            await clearChoicesForMessage(messageIndex);
+            console.log(`[${EXTENSION_NAME}] ⚡ Fallback button clicked for message ${messageIndex}`);
             $message.find('.st-choices-container').remove();
             await generateSuggestions();
         })
         .appendTo($container);
 
     $message.find('.mes_text').after($container);
-    console.log(`[${EXTENSION_NAME}] ✅ Rendered ${choices.length} choices on message ${messageIndex}`);
+    console.log(`[${EXTENSION_NAME}] ✅ Rendered fallback button on message ${messageIndex}`);
 }
 
 async function restoreAllChoices() {
@@ -174,6 +180,21 @@ async function restoreAllChoices() {
 
     if (pruned) await saveMetadata();
     console.log(`[${EXTENSION_NAME}] ✅ Restored ${restored} choice set(s)`);
+
+    // Check if last message needs fallback button
+    const { chat } = SillyTavern.getContext();
+    const lastIndex = chat.length - 1;
+    if (lastIndex >= 0 && !chat[lastIndex].is_user) {
+        const messageIndexStr = String(lastIndex);
+        const hasSavedChoices = store?.[messageIndexStr] && Array.isArray(store[messageIndexStr]) && store[messageIndexStr].length > 0;
+        const $lastMessage = $(`.mes[mesid="${lastIndex}"]`);
+        const hasContainer = $lastMessage.find('.st-choices-container').length > 0;
+
+        if (!hasSavedChoices && !hasContainer) {
+            console.log(`[${EXTENSION_NAME}] 🔄 Last AI message has no choices - rendering fallback`);
+            renderFallbackButton(lastIndex);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +243,10 @@ async function generateSuggestions() {
 
         const choices = parseSuggestions(response);
         console.log(`[${EXTENSION_NAME}] Parsed ${choices.length} suggestions:`, choices);
-        if (!choices.length) return;
+        if (!choices.length) {
+            renderFallbackButton(chat.length - 1);
+            return;
+        }
 
         await renderSuggestions(choices, chat.length - 1);
     } catch (err) {
