@@ -8,24 +8,12 @@ const extensionId = "sillytavern_choices";
 // Abort flag to prevent concurrent generation
 let isGenerating = false;
 
-// Save choices to chat metadata
-async function saveChoicesToMetadata(suggestions, messageId) {
+// Trigger chat save
+function triggerChatSave() {
     const context = SillyTavern.getContext();
-    // chatMetadata is a live reference — mutate it directly
-    context.chatMetadata['st_choices'] = { suggestions, messageId };
-    // ST persists chatMetadata via the chat file save — trigger it with saveSettingsDebounced
-    // which flushes both settings AND current chat
-    if (typeof context.saveSettingsDebounced === 'function') {
-        context.saveSettingsDebounced();
-    }
-    console.log(`[${extensionName}] Saved suggestions to chat metadata:`, context.chatMetadata['st_choices']);
-}
-
-// Clear choices from chat metadata
-async function clearChoicesMetadata() {
-    const context = SillyTavern.getContext();
-    delete context.chatMetadata['st_choices'];
-    if (typeof context.saveSettingsDebounced === 'function') {
+    if (typeof context.saveChat === 'function') {
+        context.saveChat();
+    } else if (typeof context.saveSettingsDebounced === 'function') {
         context.saveSettingsDebounced();
     }
 }
@@ -130,8 +118,13 @@ function parseSuggestions(response) {
 
 // Render suggestion buttons in chat
 function renderSuggestions(suggestions, messageId, fromPersistence = false) {
-    if (!fromPersistence) {
-        saveChoicesToMetadata(suggestions, messageId);
+    const { chat } = SillyTavern.getContext();
+
+    if (!fromPersistence && chat[messageId]) {
+        if (!chat[messageId].extra) chat[messageId].extra = {};
+        chat[messageId].extra.st_choices = suggestions;
+        console.log(`[${extensionName}] Saved suggestions on message ${messageId}:`, chat[messageId].extra.st_choices);
+        triggerChatSave();
     }
 
     setTimeout(() => {
@@ -287,23 +280,39 @@ $(document).ready(async function() {
 
     // Restore suggestions on chat load
     eventSource.on(event_types.CHAT_CHANGED, () => {
-        const { chatMetadata } = SillyTavern.getContext();
-        console.log(`[${extensionName}] CHAT_CHANGED fired, metadata:`, JSON.stringify(chatMetadata['st_choices']));
-        const saved = chatMetadata['st_choices'];
-        if (saved?.suggestions?.length > 0) {
-            console.log(`[${extensionName}] Restoring suggestions from metadata`);
-            setTimeout(() => renderSuggestions(saved.suggestions, saved.messageId, true), 600);
+        const { chat } = SillyTavern.getContext();
+        if (!chat || chat.length === 0) return;
+
+        for (let i = chat.length - 1; i >= 0; i--) {
+            const msg = chat[i];
+            if (!msg?.is_user && msg.extra?.st_choices?.length > 0) {
+                console.log(`[${extensionName}] Restoring suggestions from message ${i}`, msg.extra.st_choices);
+                setTimeout(() => renderSuggestions(msg.extra.st_choices, i, true), 600);
+                break;
+            }
         }
     });
 
     // Clear suggestions on swipe and generation start
-    eventSource.on(event_types.MESSAGE_SWIPED, () => {
+    eventSource.on(event_types.MESSAGE_SWIPED, (messageId) => {
+        const { chat } = SillyTavern.getContext();
         $('.st-choices-container').remove();
-        clearChoicesMetadata();
+
+        if (chat[messageId]?.extra?.st_choices) {
+            delete chat[messageId].extra.st_choices;
+            triggerChatSave();
+        }
     });
     eventSource.on(event_types.GENERATION_STARTED, () => {
+        const { chat } = SillyTavern.getContext();
         $('.st-choices-container').remove();
-        clearChoicesMetadata();
+
+        const lastIdx = chat.length - 1;
+        const lastMsg = chat[lastIdx];
+        if (lastMsg?.extra?.st_choices) {
+            delete lastMsg.extra.st_choices;
+            triggerChatSave();
+        }
     });
 
     // Listen for AI messages
