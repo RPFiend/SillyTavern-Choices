@@ -8,6 +8,13 @@ const extensionId = "sillytavern_choices";
 // Abort flag to prevent concurrent generation
 let isGenerating = false;
 
+// Trigger ST's chat save directly via the global function
+function triggerChatSave() {
+    if (typeof window.saveChat === 'function') {
+        window.saveChat();
+    }
+}
+
 const defaultSettings = {
     enabled: true,
     llm_prompt: `Stop roleplay now and provide a response with {{suggestionNumber}} brief distinct single-sentence suggestions for next story beat on {{user}} perspective. Ensure each suggestion aligns with its corresponding description: 1. Eases tension and improves protagonist's situation 2. Creates or increases tension and worsens protagonist's situation 3. Leads directly but believably to a wild twist or super weird event 4. Slowly moves the story forward without ending the current scene 5. Pushes the story forward, potentially ending the current scene if feasible Each suggestion surrounded by \`\` tags. E.g: suggestion_1 suggestion_2 ... Do not include any other content in your response.`,
