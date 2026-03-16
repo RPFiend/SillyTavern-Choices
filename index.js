@@ -10,8 +10,9 @@ let isGenerating = false;
 
 const defaultSettings = {
     enabled: true,
+    completion_preset: '',
     llm_prompt: `Stop roleplay now and provide a response with {{suggestionNumber}} brief distinct single-sentence suggestions for next story beat on {{user}} perspective. Ensure each suggestion aligns with its corresponding description: 1. Eases tension and improves protagonist's situation 2. Creates or increases tension and worsens protagonist's situation 3. Leads directly but believably to a wild twist or super weird event 4. Slowly moves the story forward without ending the current scene 5. Pushes the story forward, potentially ending the current scene if feasible Each suggestion surrounded by \`\` tags. E.g: suggestion_1 suggestion_2 ... Do not include any other content in your response.`,
-    llm_prompt_impersonate: `[Event Direction for the next story beat on {{user}} perspective: \`{{suggestionText}}\`] [Based on the expected events, write the user response]`,
+    llm_prompt_impersonate: `\`{{suggestionText}}\``,
     apply_wi_an: true,
     num_responses: 5,
     response_length: 500,
@@ -47,7 +48,8 @@ async function generateSuggestions() {
     isGenerating = true;
     
     try {
-        const { chat, generateQuietPrompt } = SillyTavern.getContext();
+        const context = SillyTavern.getContext();
+        const { chat, generateQuietPrompt } = context;
         if (!extensionSettings?.enabled) {
             console.log(`[${extensionName}] Extension is disabled, skipping suggestion generation`);
             return;
@@ -62,29 +64,48 @@ async function generateSuggestions() {
 
         console.log('[ST-Choices] Generating suggestions...');
 
-        // Prepare prompt with suggestion number
-        let prompt = extensionSettings.llm_prompt.replace('{{suggestionNumber}}', extensionSettings.num_responses);
+        // Save current preset name before switching
+        const originalPreset = $('#settings_preset').val();
 
-        const response = await generateQuietPrompt(
-            prompt,
-            false,
-            extensionSettings.apply_wi_an,
-            extensionSettings.response_length
-        );
+        try {
+            // Switch to extension's preset if configured
+            if (extensionSettings.completion_preset) {
+                $('#settings_preset')
+                    .val(extensionSettings.completion_preset)
+                    .trigger('change');
+                // Small delay to let ST apply the preset
+                await new Promise(r => setTimeout(r, 300));
+            }
 
-        if (!response) {
-            console.log(`[${extensionName}] No response from generateQuietPrompt`);
-            return;
+            const prompt = extensionSettings.llm_prompt
+                .replace('{{suggestionNumber}}', extensionSettings.num_responses);
+            const response = await generateQuietPrompt(
+                prompt,
+                false,
+                extensionSettings.apply_wi_an,
+                extensionSettings.response_length
+            );
+            if (!response) {
+                console.log(`[${extensionName}] No response from generateQuietPrompt`);
+                return;
+            }
+
+            console.log('[ST-Choices] Raw response:', response);
+            const suggestions = parseSuggestions(response);
+            if (suggestions.length === 0) {
+                console.log(`[${extensionName}] No suggestions found in response`);
+                return;
+            }
+
+            renderSuggestions(suggestions, messageId);
+        } finally {
+            // Always restore original preset
+            if (extensionSettings.completion_preset && originalPreset) {
+                $('#settings_preset')
+                    .val(originalPreset)
+                    .trigger('change');
+            }
         }
-
-        console.log('[ST-Choices] Raw response:', response);
-        const suggestions = parseSuggestions(response);
-        if (suggestions.length === 0) {
-            console.log(`[${extensionName}] No suggestions found in response`);
-            return;
-        }
-
-        renderSuggestions(suggestions, messageId);
     } catch (error) {
         console.error(`[${extensionName}] Error generating suggestions:`, error);
     } finally {
@@ -195,6 +216,13 @@ function renderSettings() {
                         </div>
 
                         <div class="cyoa-setting-group">
+                            <label for="st_choices_completion_preset">Completion Preset (leave blank to use current)</label>
+                            <select id="st_choices_completion_preset" class="text_pole">
+                                <option value="">-- Use Current Preset --</option>
+                            </select>
+                        </div>
+
+                        <div class="cyoa-setting-group">
                             <label for="${extensionId}_llm_prompt">LLM Prompt:</label>
                             <textarea id="${extensionId}_llm_prompt" rows="10">${extensionSettings.llm_prompt}</textarea>
                         </div>
@@ -271,6 +299,23 @@ $(document).ready(function() {
 
     loadSettings();
     renderSettings();
+
+    // Populate preset dropdown from ST's existing preset list
+    $('#settings_preset option').each(function() {
+        const val = $(this).val();
+        const text = $(this).text();
+        if (val) {
+            $('#st_choices_completion_preset').append(
+                $('<option>').val(val).text(text)
+            );
+        }
+    });
+    $('#st_choices_completion_preset').val(extensionSettings.completion_preset || '');
+    $('#st_choices_completion_preset').on('change', function() {
+        extensionSettings.completion_preset = $(this).val();
+        const { saveSettingsDebounced } = SillyTavern.getContext();
+        saveSettingsDebounced();
+    });
 
     // Get eventSource from context
     const { eventSource, event_types } = SillyTavern.getContext();
