@@ -119,6 +119,14 @@ async function renderSuggestions(choices, messageIndex, skipSave = false) {
             .appendTo($container);
     });
 
+    $('<button class="st-choices-regen menu_button interactable" tabindex="0" role="button">↻ Regenerate Suggestions</button>')
+        .on('click', async () => {
+            await clearChoicesForMessage(messageIndex);
+            $message.find('.st-choices-container').remove();
+            await generateSuggestions();
+        })
+        .appendTo($container);
+
     $message.find('.mes_text').after($container);
     console.log(`[${EXTENSION_NAME}] ✅ Rendered ${choices.length} choices on message ${messageIndex}`);
 }
@@ -238,6 +246,7 @@ async function generateSuggestions() {
 
         if (!response) {
             console.warn(`[${EXTENSION_NAME}] ⚠ Empty response from generateQuietPrompt`);
+            renderFallbackButton(chat.length - 1);
             return;
         }
 
@@ -261,27 +270,33 @@ async function generateSuggestions() {
 // ---------------------------------------------------------------------------
 
 function parseSuggestions(response) {
-    const suggestions = [];
+    const strategies = [
+        // <suggestion_1>text</suggestion_1>
+        () => [...response.matchAll(/<suggestion_\d+>([\s\S]*?)<\/suggestion_\d+>/g)].map(m => m[1].trim()),
+        // <option_1>text</option_1> or <choice_1>text</choice_1>
+        () => [...response.matchAll(/<(?:option|choice)_\d+>([\s\S]*?)<\/(?:option|choice)_\d+>/g)].map(m => m[1].trim()),
+        // `text`  ← confirmed format used by this LLM
+        () => [...response.matchAll(/`([^`\n]+)`/g)].map(m => m[1].trim()),
+        // "text"  (quote-wrapped full lines)
+        () => [...response.matchAll(/^"([^"]+)"$/gm)].map(m => m[1].trim()),
+        // 1. text  or  1) text
+        () => [...response.matchAll(/^\d+[.)]\s+(.+)$/gm)].map(m => m[1].trim()),
+        // - text  or  * text
+        () => [...response.matchAll(/^[-*]\s+(.+)$/gm)].map(m => m[1].trim()),
+    ];
 
-    // Match <suggestion_N>content</suggestion_N> and capture only the inner content
-    const tagPattern = /<suggestion_(\d+)>([\s\S]*?)<\/suggestion_\1>/gi;
-    let match;
-    while ((match = tagPattern.exec(response)) !== null) {
-        const text = match[2].trim();
-        if (text) suggestions.push(text);
+    for (const strategy of strategies) {
+        try {
+            const results = strategy().filter(s => s.length > 0);
+            if (results.length) {
+                console.log(`[${EXTENSION_NAME}] Parsed suggestions:`, results);
+                return results;
+            }
+        } catch (_) { /* try next */ }
     }
 
-    // Fallback: numbered list format (1. text or 1) text)
-    if (suggestions.length === 0) {
-        const listPattern = /^\s*\d+[.)]\s+(.+)$/gm;
-        while ((match = listPattern.exec(response)) !== null) {
-            const text = match[1].trim();
-            if (text) suggestions.push(text);
-        }
-    }
-
-    console.log(`[${EXTENSION_NAME}] Parsed suggestions:`, suggestions);
-    return suggestions;
+    console.log(`[${EXTENSION_NAME}] Parsed suggestions: []`);
+    return [];
 }
 
 // ---------------------------------------------------------------------------
