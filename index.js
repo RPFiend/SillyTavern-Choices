@@ -10,7 +10,6 @@ let isGenerating = false;
 
 const defaultSettings = {
     enabled: true,
-    completion_preset: '',
     llm_prompt: `Stop roleplay now and provide a response with {{suggestionNumber}} brief distinct single-sentence suggestions for next story beat on {{user}} perspective. Ensure each suggestion aligns with its corresponding description: 1. Eases tension and improves protagonist's situation 2. Creates or increases tension and worsens protagonist's situation 3. Leads directly but believably to a wild twist or super weird event 4. Slowly moves the story forward without ending the current scene 5. Pushes the story forward, potentially ending the current scene if feasible Each suggestion surrounded by \`\` tags. E.g: suggestion_1 suggestion_2 ... Do not include any other content in your response.`,
     llm_prompt_impersonate: `\`{{suggestionText}}\``,
     apply_wi_an: true,
@@ -46,68 +45,27 @@ function saveSettings() {
 async function generateSuggestions() {
     if (isGenerating) return;
     isGenerating = true;
-    
     try {
-        const context = SillyTavern.getContext();
-        const { chat, generateQuietPrompt } = context;
-        if (!extensionSettings?.enabled) {
-            console.log(`[${extensionName}] Extension is disabled, skipping suggestion generation`);
-            return;
-        }
+        const { chat, generateQuietPrompt } = SillyTavern.getContext();
+        if (!extensionSettings?.enabled) return;
+        if (chat.length === 0) return;
 
-        if (chat.length === 0) {
-            console.log(`[${extensionName}] No messages in chat, skipping suggestion generation`);
-            return;
-        }
+        const prompt = extensionSettings.llm_prompt
+            .replace('{{suggestionNumber}}', extensionSettings.num_responses);
+        const response = await generateQuietPrompt(
+            prompt,
+            false,
+            extensionSettings.apply_wi_an,
+            extensionSettings.response_length
+        );
+        if (!response) return;
 
-        const messageId = chat.length - 1;
-
-        console.log('[ST-Choices] Generating suggestions...');
-
-        // Save current preset name before switching
-        const originalPreset = $('#settings_preset').val();
-
-        try {
-            // Switch to extension's preset if configured
-            if (extensionSettings.completion_preset) {
-                $('#settings_preset')
-                    .val(extensionSettings.completion_preset)
-                    .trigger('change');
-                // Small delay to let ST apply the preset
-                await new Promise(r => setTimeout(r, 300));
-            }
-
-            const prompt = extensionSettings.llm_prompt
-                .replace('{{suggestionNumber}}', extensionSettings.num_responses);
-            const response = await generateQuietPrompt(
-                prompt,
-                false,
-                extensionSettings.apply_wi_an,
-                extensionSettings.response_length
-            );
-            if (!response) {
-                console.log(`[${extensionName}] No response from generateQuietPrompt`);
-                return;
-            }
-
-            console.log('[ST-Choices] Raw response:', response);
-            const suggestions = parseSuggestions(response);
-            if (suggestions.length === 0) {
-                console.log(`[${extensionName}] No suggestions found in response`);
-                return;
-            }
-
-            renderSuggestions(suggestions, messageId);
-        } finally {
-            // Always restore original preset
-            if (extensionSettings.completion_preset && originalPreset) {
-                $('#settings_preset')
-                    .val(originalPreset)
-                    .trigger('change');
-            }
-        }
+        const suggestions = parseSuggestions(response);
+        console.log(`[${extensionName}] Parsed suggestions:`, suggestions);
+        if (suggestions.length === 0) return;
+        renderSuggestions(suggestions, chat.length - 1);
     } catch (error) {
-        console.error(`[${extensionName}] Error generating suggestions:`, error);
+        console.error(`[${extensionName}] Error:`, error);
     } finally {
         isGenerating = false;
     }
@@ -216,13 +174,6 @@ function renderSettings() {
                         </div>
 
                         <div class="cyoa-setting-group">
-                            <label for="st_choices_completion_preset">Completion Preset (leave blank to use current)</label>
-                            <select id="st_choices_completion_preset" class="text_pole">
-                                <option value="">-- Use Current Preset --</option>
-                            </select>
-                        </div>
-
-                        <div class="cyoa-setting-group">
                             <label for="${extensionId}_llm_prompt">LLM Prompt:</label>
                             <textarea id="${extensionId}_llm_prompt" rows="10">${extensionSettings.llm_prompt}</textarea>
                         </div>
@@ -303,67 +254,6 @@ $(document).ready(async function() {
 
     // Get eventSource from context
     const { eventSource, event_types } = SillyTavern.getContext();
-
-    async function populatePresetDropdown() {
-        const $dropdown = $('#st_choices_completion_preset');
-        $dropdown.find('option:not([value=""])').remove();
-
-        try {
-            // Use ST's oai_settings or textgenerationwebui_settings presets
-            // by reading directly from active API's preset select element
-            const context = SillyTavern.getContext();
-
-            // ST stores active API type here
-            const apiType = context.mainApi;
-
-            // Map API type to correct preset dropdown ST uses internally
-            const selectorMap = {
-                'openai': '#model_openai_select, #settings_preset_openai',
-                'textgenerationwebui': '#settings_preset_textgenerationwebui',
-                'kobold': '#settings_preset_kobold',
-                'novel': '#settings_preset_novel',
-                'claudeai': '#settings_preset_claude',
-            };
-
-            // Try mapped selector first, then fall back to any visible preset dropdown
-            const selector = selectorMap[apiType] || '.preset_select:visible';
-            const $activePreset = $(selector).first();
-
-            if ($activePreset.length > 0) {
-                $activePreset.find('option').each(function() {
-                    const val = $(this).val();
-                    const text = $(this).text();
-                    if (val && val !== 'gui' && val !== '') {
-                        $dropdown.append($('<option>').val(val).text(text));
-                    }
-                });
-            }
-
-            // Also try context.getPresetList as a secondary source
-            if ($dropdown.find('option').length <= 1 && context.getPresetList) {
-                const presets = context.getPresetList();
-                if (presets?.length > 0) {
-                    presets.forEach(p => $dropdown.append($('<option>').val(p).text(p)));
-                }
-            }
-        } catch(e) {
-            console.warn(`[${extensionName}] Could not populate preset dropdown:`, e);
-        }
-
-        $dropdown.val(extensionSettings.completion_preset || '');
-        console.log(`[${extensionName}] Preset dropdown populated, active API: ${SillyTavern.getContext().mainApi}`);
-    }
-
-    // Call it on init and whenever the API type changes
-    await populatePresetDropdown();
-    eventSource.on(event_types.CHAT_CHANGED, populatePresetDropdown);
-
-    // Bind preset change event
-    $('#st_choices_completion_preset').on('change', function() {
-        extensionSettings.completion_preset = $(this).val();
-        const { saveSettingsDebounced } = SillyTavern.getContext();
-        saveSettingsDebounced();
-    });
 
     // Listen for generation stopped/ended to reset abort flag
     eventSource.on(event_types.GENERATION_STOPPED, () => { isGenerating = false; });
