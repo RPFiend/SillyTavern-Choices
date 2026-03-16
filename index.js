@@ -107,13 +107,17 @@ function parseSuggestions(response) {
 }
 
 // Render suggestion buttons in chat
-function renderSuggestions(suggestions, messageId) {
-    // Save to message extra for persistence
-    const { chat, saveChat } = SillyTavern.getContext();
-    if (chat[messageId]) {
+function renderSuggestions(suggestions, messageId, fromPersistence = false) {
+    const { chat } = SillyTavern.getContext();
+
+    // Only save if this is a fresh generation, not a restore
+    if (!fromPersistence && chat[messageId]) {
         if (!chat[messageId].extra) chat[messageId].extra = {};
         chat[messageId].extra.st_choices = suggestions;
-        saveChat();
+        console.log(`[${extensionName}] Saved suggestions to message ${messageId}:`, chat[messageId].extra.st_choices);
+        // Use the event emitter to trigger ST's save — more reliable than calling saveChat() directly
+        const { eventSource, event_types } = SillyTavern.getContext();
+        eventSource.emit(event_types.SETTINGS_UPDATED);
     }
 
     setTimeout(() => {
@@ -274,7 +278,8 @@ $(document).ready(async function() {
         for (let i = chat.length - 1; i >= 0; i--) {
             const message = chat[i];
             if (message?.extra?.st_choices?.length > 0 && !message.is_user) {
-                setTimeout(() => renderSuggestions(message.extra.st_choices, i), 500);
+                console.log(`[${extensionName}] Restoring ${message.extra.st_choices.length} suggestions for message ${i}`);
+                setTimeout(() => renderSuggestions(message.extra.st_choices, i, true), 600);
                 break;
             }
         }
