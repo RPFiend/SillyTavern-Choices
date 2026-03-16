@@ -287,6 +287,9 @@ $(document).ready(function() {
     loadSettings();
     renderSettings();
 
+    // Get eventSource from context
+    const { eventSource, event_types } = SillyTavern.getContext();
+
     // Listen for AI messages
     eventSource.on(event_types.MESSAGE_RECEIVED, function(data) {
         console.log('[ST-Choices] Extension loaded, event listener registered');
