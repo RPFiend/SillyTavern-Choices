@@ -108,6 +108,14 @@ function parseSuggestions(response) {
 
 // Render suggestion buttons in chat
 function renderSuggestions(suggestions, messageId) {
+    // Save to message extra for persistence
+    const { chat, saveChat } = SillyTavern.getContext();
+    if (chat[messageId]) {
+        if (!chat[messageId].extra) chat[messageId].extra = {};
+        chat[messageId].extra.st_choices = suggestions;
+        saveChat();
+    }
+
     setTimeout(() => {
         const $message = $(`.mes[mesid="${messageId}"]`);
         if ($message.length === 0) {
@@ -259,12 +267,36 @@ $(document).ready(async function() {
     eventSource.on(event_types.GENERATION_STOPPED, () => { isGenerating = false; });
     eventSource.on(event_types.GENERATION_ENDED, () => { isGenerating = false; });
 
+    // Restore suggestions on chat load
+    eventSource.on(event_types.CHAT_CHANGED, () => {
+        const { chat } = SillyTavern.getContext();
+        if (!chat || chat.length === 0) return;
+        for (let i = chat.length - 1; i >= 0; i--) {
+            const message = chat[i];
+            if (message?.extra?.st_choices?.length > 0 && !message.is_user) {
+                setTimeout(() => renderSuggestions(message.extra.st_choices, i), 500);
+                break;
+            }
+        }
+    });
+
     // Clear suggestions on swipe and generation start
-    eventSource.on(event_types.MESSAGE_SWIPED, () => {
+    eventSource.on(event_types.MESSAGE_SWIPED, (messageId) => {
         $('.st-choices-container').remove();
+        const { chat, saveChat } = SillyTavern.getContext();
+        if (chat[messageId]?.extra?.st_choices) {
+            delete chat[messageId].extra.st_choices;
+            saveChat();
+        }
     });
     eventSource.on(event_types.GENERATION_STARTED, () => {
         $('.st-choices-container').remove();
+        const { chat, saveChat } = SillyTavern.getContext();
+        const lastMsg = chat[chat.length - 1];
+        if (lastMsg?.extra?.st_choices) {
+            delete lastMsg.extra.st_choices;
+            saveChat();
+        }
     });
 
     // Listen for AI messages
