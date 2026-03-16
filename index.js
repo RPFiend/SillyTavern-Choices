@@ -55,6 +55,9 @@ async function generateSuggestions() {
     try {
         console.log('[ST-Choices] Generating suggestions...');
 
+        // Get the last AI message index
+        const messageId = chat.length - 1;
+
         // Prepare the prompt with suggestion number
         let prompt = extensionSettings.llm_prompt.replace('{{suggestionNumber}}', extensionSettings.num_responses);
 
@@ -69,7 +72,7 @@ async function generateSuggestions() {
             console.log('[ST-Choices] Raw response:', response);
             const suggestions = parseSuggestions(response);
             if (suggestions.length > 0) {
-                renderSuggestions(suggestions);
+                renderSuggestions(suggestions, messageId);
             }
         } else {
             console.log(`[${extensionName}] No response from generateQuietPrompt`);
@@ -92,23 +95,21 @@ function parseSuggestions(response) {
 }
 
 // Render suggestion buttons in chat
-function renderSuggestions(suggestions) {
+function renderSuggestions(suggestions, messageId) {
     const { chat } = SillyTavern.getContext();
     
-    console.log('[ST-Choices] Rendering buttons:', suggestions);
+    console.log('[SillyTavern-Choices] Rendering buttons:', suggestions);
     
     if (chat.length === 0) {
         console.log(`[${extensionName}] No messages in chat to append to`);
         return;
     }
 
-    // Get the last message element
-    const lastMessage = chat[chat.length - 1];
-    const messageId = lastMessage.mesId;
+    // Get the message element using the passed messageId
     const messageElement = $(`.mes[mesid="${messageId}"]`);
     
     if (messageElement.length === 0) {
-        console.error('[ST-Choices] Message element not found for mesid:', messageId);
+        console.error('[SillyTavern-Choices] Message element not found for mesid:', messageId);
         return;
     }
 
@@ -139,8 +140,9 @@ function renderSuggestions(suggestions) {
         container.appendChild(button);
     });
 
-    // Append to message after .mes_text
-    messageElement.find('.mes_text').after(container);
+    // Wrap container in jQuery and append to message after .mes_text
+    const $container = $(container);
+    messageElement.find('.mes_text').after($container);
 
     console.log(`[${extensionName}] Rendered ${suggestions.length} suggestion buttons`);
 }
@@ -287,8 +289,8 @@ $(document).ready(function() {
 
     // Listen for AI messages
     eventSource.on(event_types.MESSAGE_RECEIVED, function(data) {
-        console.log('[ST-Choices] Extension loaded, event listener registered');
-        console.log('[ST-Choices] MESSAGE_RECEIVED fired');
+        console.log('[SillyTavern-Choices] Extension loaded, event listener registered');
+        console.log('[SillyTavern-Choices] MESSAGE_RECEIVED fired');
         console.log(`[${extensionName}] Message received:`, data);
         
         // Only generate after AI messages (user messages have 'is_user' or similar)
