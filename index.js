@@ -1,19 +1,20 @@
-// All SlashCommand classes are available via getContext() — confirmed from context key dump.
-// Keeping imports as a fallback but they are not strictly needed.
+Index · JS
+Copy
+
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
-
+ 
 const MODULE_NAME = 'sillytavern_choices';
 const EXTENSION_NAME = 'SillyTavern-Choices';
 const STORAGE_KEY = 'st_choices';
-
+ 
 let isGenerating = false;
-
+ 
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
-
+ 
 const defaultSettings = Object.freeze({
     enabled: true,
     llm_prompt: `Stop roleplay now and provide a response with {{suggestionNumber}} brief distinct single-sentence suggestions for next story beat on {{user}} perspective. Ensure each suggestion aligns with its corresponding description: 1. Eases tension and improves protagonist's situation 2. Creates or increases tension and worsens protagonist's situation 3. Leads directly but believably to a wild twist or super weird event 4. Slowly moves the story forward without ending the current scene 5. Pushes the story forward, potentially ending the current scene if feasible Each suggestion surrounded by \`\` tags. E.g: suggestion_1 suggestion_2 ... Do not include any other content in your response.`,
@@ -22,7 +23,7 @@ const defaultSettings = Object.freeze({
     num_responses: 5,
     response_length: 500,
 });
-
+ 
 function loadSettings() {
     const { extensionSettings } = SillyTavern.getContext();
     const { lodash } = SillyTavern.libs;
@@ -31,58 +32,55 @@ function loadSettings() {
         extensionSettings[MODULE_NAME],
     );
 }
-
+ 
 function getSettings() {
     return SillyTavern.getContext().extensionSettings[MODULE_NAME];
 }
-
+ 
 function saveSettings() {
     SillyTavern.getContext().saveSettingsDebounced();
 }
-
+ 
 // ---------------------------------------------------------------------------
-// Persistence
+// Persistence — chatMetadata + saveMetadata()
 //
-// Confirmed from console: chatMetadata and saveMetadata both exist on getContext().
-// saveMetadataDebounced also exists — used for non-blocking saves inside render.
+// Confirmed present in getContext() from console dump.
+// Never cache chatMetadata — re-fetch every call, reference changes on chat switch.
 //
 // Structure: chatMetadata[STORAGE_KEY] = { "<msgIndex>": ["choice1", ...] }
-//
-// Never cache chatMetadata — re-fetch from getContext() every call because
-// the reference is replaced on chat switch.
 // ---------------------------------------------------------------------------
-
+ 
 async function saveChoicesForMessage(messageIndex, choices) {
     const { chatMetadata, saveMetadata } = SillyTavern.getContext();
-
+ 
     if (!chatMetadata[STORAGE_KEY]) {
         chatMetadata[STORAGE_KEY] = {};
     }
     chatMetadata[STORAGE_KEY][String(messageIndex)] = choices;
-
+ 
     await saveMetadata();
     console.log(`[${EXTENSION_NAME}] ✅ Saved choices for message ${messageIndex}:`, choices);
-    console.log(`[${EXTENSION_NAME}] chatMetadata state:`, JSON.stringify(chatMetadata[STORAGE_KEY]));
+    console.log(`[${EXTENSION_NAME}] chatMetadata['${STORAGE_KEY}']:`, JSON.stringify(chatMetadata[STORAGE_KEY]));
 }
-
+ 
 async function clearChoicesForMessage(messageIndex) {
     const { chatMetadata, saveMetadata } = SillyTavern.getContext();
     const store = chatMetadata[STORAGE_KEY];
-
+ 
     if (store?.[String(messageIndex)] !== undefined) {
         delete store[String(messageIndex)];
         await saveMetadata();
         console.log(`[${EXTENSION_NAME}] 🗑 Cleared choices for message ${messageIndex}`);
     }
 }
-
+ 
 // ---------------------------------------------------------------------------
 // DOM helpers
 // ---------------------------------------------------------------------------
-
+ 
 /**
- * Polls for a .mes[mesid] element to appear — needed after CHAT_CHANGED,
- * which fires before ST finishes rendering the DOM.
+ * Polls for a .mes[mesid] element — needed after CHAT_CHANGED which fires
+ * before ST finishes rendering the DOM.
  */
 function waitForMessageElement(mesid, maxWaitMs = 3000) {
     return new Promise((resolve) => {
@@ -102,32 +100,32 @@ function waitForMessageElement(mesid, maxWaitMs = 3000) {
         check();
     });
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
-
+ 
 async function renderSuggestions(choices, messageIndex, skipSave = false) {
     if (!skipSave) {
         await saveChoicesForMessage(messageIndex, choices);
     }
-
+ 
     const $message = $(`.mes[mesid="${messageIndex}"]`);
     if (!$message.length) {
         console.error(`[${EXTENSION_NAME}] ❌ renderSuggestions: could not find mesid=${messageIndex}`);
         return;
     }
-
+ 
     $message.find('.st-choices-container').remove();
     const $container = $('<div class="st-choices-container"></div>');
-
+ 
     choices.forEach((text, index) => {
         $('<button class="st-choices-btn menu_button"></button>')
             .text(`${index + 1}. ${text}`)
             .on('click', () => handleChoiceClick(messageIndex, text))
             .appendTo($container);
     });
-
+ 
     $('<button class="st-choices-regen menu_button interactable" tabindex="0" role="button">↻ Regenerate Suggestions</button>')
         .on('click', async () => {
             await clearChoicesForMessage(messageIndex);
@@ -135,31 +133,30 @@ async function renderSuggestions(choices, messageIndex, skipSave = false) {
             await generateSuggestions();
         })
         .appendTo($container);
-
+ 
     $message.find('.mes_text').after($container);
     console.log(`[${EXTENSION_NAME}] ✅ Rendered ${choices.length} choices on message ${messageIndex}`);
 }
-
+ 
 async function restoreAllChoices() {
-    // Re-fetch chatMetadata every time — reference changes on chat switch
+    // Re-fetch chatMetadata fresh — reference changes on chat switch
     const { chatMetadata, saveMetadata } = SillyTavern.getContext();
     const store = chatMetadata[STORAGE_KEY];
-
-    console.log(`[${EXTENSION_NAME}] 🔄 restoreAllChoices — stored data:`, store);
-
+ 
+    console.log(`[${EXTENSION_NAME}] 🔄 restoreAllChoices — store:`, store);
+ 
     if (!store || !Object.keys(store).length) {
         console.log(`[${EXTENSION_NAME}] No saved choices to restore`);
         return;
     }
-
+ 
     let restored = 0;
     let pruned = false;
-
+ 
     for (const [indexStr, choices] of Object.entries(store)) {
         const messageIndex = parseInt(indexStr, 10);
         if (!Array.isArray(choices) || !choices.length) continue;
-
-        console.log(`[${EXTENSION_NAME}] Restoring mesid=${messageIndex}...`);
+ 
         const found = await waitForMessageElement(messageIndex);
         if (!found) {
             console.warn(`[${EXTENSION_NAME}] ⚠ Pruning stale entry for mesid=${messageIndex}`);
@@ -167,68 +164,70 @@ async function restoreAllChoices() {
             pruned = true;
             continue;
         }
-
+ 
         await renderSuggestions(choices, messageIndex, /* skipSave */ true);
         restored++;
     }
-
+ 
     if (pruned) await saveMetadata();
     console.log(`[${EXTENSION_NAME}] ✅ Restored ${restored} choice set(s)`);
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Click handler
 // ---------------------------------------------------------------------------
-
+ 
 async function handleChoiceClick(messageIndex, choiceText) {
-    // Clear saved data BEFORE sending — prevents stale restore on refresh
+    // Clear saved data BEFORE sending so refresh won't restore stale buttons
     await clearChoicesForMessage(messageIndex);
-
+ 
     const prompt = getSettings().llm_prompt_impersonate
         .replace('{{suggestionText}}', choiceText);
-
+ 
     $('#send_textarea').val(prompt).trigger('input');
     $('#send_but').trigger('click');
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Generation
 // ---------------------------------------------------------------------------
-
+ 
 async function generateSuggestions() {
     if (isGenerating) return;
     isGenerating = true;
-
+ 
     try {
         const { chat, generateQuietPrompt } = SillyTavern.getContext();
         const settings = getSettings();
-
+ 
         if (!settings.enabled || !chat.length) return;
-
+ 
         const quietPrompt = settings.llm_prompt
             .replace('{{suggestionNumber}}', settings.num_responses);
-
-        // CONFIRMED SIGNATURE from ctx.generateQuietPrompt.toString():
-        // generateQuietPrompt({ quietPrompt, quietToLoud, skipWIAN, responseLength, ... })
-        //
-        // Previous code used `addWIAN` (doesn't exist) and `maxResponseTokens` (doesn't exist).
-        // `skipWIAN` is the INVERSE of apply_wi_an — if we want to apply WI/AN, skip = false.
-        const response = await generateQuietPrompt({
+ 
+        // Using confirmed-working positional argument form.
+        // The object form { quietPrompt, skipWIAN, responseLength } was tried and
+        // returned empty responses despite the generation running — reverting to
+        // positional which is proven to work on this ST install.
+        // Positional order: (quietPrompt, quietToLoud, addWIAN, responseLength)
+        const response = await generateQuietPrompt(
             quietPrompt,
-            quietToLoud: false,
-            skipWIAN: !settings.apply_wi_an,
-            responseLength: settings.response_length,
-        });
-
+            false,
+            settings.apply_wi_an,
+            settings.response_length,
+        );
+ 
+        console.log(`[${EXTENSION_NAME}] generateQuietPrompt raw response:`, response);
+ 
         if (!response) {
-            console.warn(`[${EXTENSION_NAME}] generateQuietPrompt returned empty response`);
+            console.warn(`[${EXTENSION_NAME}] ⚠ Empty response from generateQuietPrompt`);
             return;
         }
-
+ 
         const choices = parseSuggestions(response);
         console.log(`[${EXTENSION_NAME}] Parsed ${choices.length} suggestions:`, choices);
         if (!choices.length) return;
-
+ 
         await renderSuggestions(choices, chat.length - 1);
     } catch (err) {
         console.error(`[${EXTENSION_NAME}] ❌ generateSuggestions error:`, err);
@@ -236,11 +235,11 @@ async function generateSuggestions() {
         isGenerating = false;
     }
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Parsing
 // ---------------------------------------------------------------------------
-
+ 
 function parseSuggestions(response) {
     const strategies = [
         () => [...response.matchAll(/<suggestion_\d+>([\s\S]*?)<\/suggestion_\d+>/g)].map(m => m[1].trim()),
@@ -250,7 +249,7 @@ function parseSuggestions(response) {
         () => [...response.matchAll(/^\d+[.)]\s+(.+)$/gm)].map(m => m[1].trim()),
         () => [...response.matchAll(/^[-*]\s+(.+)$/gm)].map(m => m[1].trim()),
     ];
-
+ 
     for (const strategy of strategies) {
         try {
             const results = strategy().filter(s => s.length > 0);
@@ -259,14 +258,14 @@ function parseSuggestions(response) {
     }
     return [];
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Settings UI
 // ---------------------------------------------------------------------------
-
+ 
 function renderSettings() {
     const settings = getSettings();
-
+ 
     const html = `
         <div class="cyoa-settings">
             <div class="inline-drawer">
@@ -311,9 +310,9 @@ function renderSettings() {
             </div>
         </div>
     `;
-
+ 
     $('#extensions_settings').append(html);
-
+ 
     $(`#${MODULE_NAME}_enabled`).on('change', function () {
         getSettings().enabled = $(this).prop('checked');
         saveSettings();
@@ -341,52 +340,48 @@ function renderSettings() {
         saveSettings();
     });
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Slash command
 // ---------------------------------------------------------------------------
-
+ 
 SlashCommandParser.addCommandObject(SlashCommand.fromProps({
     name: 'cyoa',
     callback: () => { generateSuggestions(); return ''; },
     helpString: 'Manually trigger CYOA story suggestions.',
 }));
-
+ 
 // ---------------------------------------------------------------------------
 // Initialization
 // ---------------------------------------------------------------------------
-
+ 
 $(document).ready(async function () {
     console.log(`[${EXTENSION_NAME}] Initializing...`);
-
+ 
     loadSettings();
     renderSettings();
-
+ 
     // Both eventTypes and event_types confirmed to work on this ST version.
     const { eventSource, eventTypes } = SillyTavern.getContext();
-
-    // Confirm the event name exists before wiring it up
-    console.log(`[${EXTENSION_NAME}] CHARACTER_MESSAGE_RENDERED event name:`, eventTypes.CHARACTER_MESSAGE_RENDERED);
-    console.log(`[${EXTENSION_NAME}] CHAT_CHANGED event name:`, eventTypes.CHAT_CHANGED);
-    console.log(`[${EXTENSION_NAME}] GENERATION_STARTED event name:`, eventTypes.GENERATION_STARTED);
-
+ 
     eventSource.on(eventTypes.GENERATION_STOPPED, () => { isGenerating = false; });
     eventSource.on(eventTypes.GENERATION_ENDED,   () => { isGenerating = false; });
-
-    // CHAT_CHANGED fires before DOM is fully rendered, so restoreAllChoices polls for elements
+ 
+    // CHAT_CHANGED fires before DOM is fully rendered — restoreAllChoices polls for elements
     eventSource.on(eventTypes.CHAT_CHANGED, () => {
-        console.log(`[${EXTENSION_NAME}] 🔔 CHAT_CHANGED fired`);
+        console.log(`[${EXTENSION_NAME}] 🔔 CHAT_CHANGED`);
         restoreAllChoices();
     });
-
-    // CHARACTER_MESSAGE_RENDERED fires AFTER the AI message element exists in the DOM
+ 
+    // CHARACTER_MESSAGE_RENDERED fires AFTER the AI message element exists in the DOM.
+    // Confirmed working from console: eventTypes.CHARACTER_MESSAGE_RENDERED = 'character_message_rendered'
     eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, (messageIndex) => {
-        console.log(`[${EXTENSION_NAME}] 🔔 CHARACTER_MESSAGE_RENDERED fired, index=${messageIndex}`);
+        console.log(`[${EXTENSION_NAME}] 🔔 CHARACTER_MESSAGE_RENDERED index=${messageIndex}`);
         generateSuggestions();
     });
-
-    // GENERATION_STARTED: walk back to clear the last AI message's choices
-    // (chat.length-1 at this point is the user's new message, not the AI's)
+ 
+    // GENERATION_STARTED: walk back through chat to find the last AI message and
+    // clear its choices — chat.length-1 at this moment is the user's new message.
     eventSource.on(eventTypes.GENERATION_STARTED, async () => {
         const { chat } = SillyTavern.getContext();
         $('.st-choices-container').remove();
@@ -397,11 +392,12 @@ $(document).ready(async function () {
             }
         }
     });
-
+ 
     eventSource.on(eventTypes.MESSAGE_SWIPED, async (messageIndex) => {
         $('.st-choices-container').remove();
         await clearChoicesForMessage(messageIndex);
     });
-
-    console.log(`[${EXTENSION_NAME}] ✅ Initialized successfully`);
+ 
+    console.log(`[${EXTENSION_NAME}] ✅ Initialized`);
 });
+ 
