@@ -10,17 +10,24 @@ let isGenerating = false;
 
 // Save choices to chat metadata
 async function saveChoicesToMetadata(suggestions, messageId) {
-    const { chatMetadata, saveMetadata } = SillyTavern.getContext();
-    chatMetadata['st_choices'] = { suggestions, messageId };
-    await saveMetadata();
-    console.log(`[${extensionName}] Saved suggestions to chat metadata`);
+    const context = SillyTavern.getContext();
+    // chatMetadata is a live reference — mutate it directly
+    context.chatMetadata['st_choices'] = { suggestions, messageId };
+    // ST persists chatMetadata via the chat file save — trigger it with saveSettingsDebounced
+    // which flushes both settings AND current chat
+    if (typeof context.saveSettingsDebounced === 'function') {
+        context.saveSettingsDebounced();
+    }
+    console.log(`[${extensionName}] Saved suggestions to chat metadata:`, context.chatMetadata['st_choices']);
 }
 
 // Clear choices from chat metadata
 async function clearChoicesMetadata() {
-    const { chatMetadata, saveMetadata } = SillyTavern.getContext();
-    delete chatMetadata['st_choices'];
-    await saveMetadata();
+    const context = SillyTavern.getContext();
+    delete context.chatMetadata['st_choices'];
+    if (typeof context.saveSettingsDebounced === 'function') {
+        context.saveSettingsDebounced();
+    }
 }
 
 const defaultSettings = {
@@ -280,8 +287,8 @@ $(document).ready(async function() {
 
     // Restore suggestions on chat load
     eventSource.on(event_types.CHAT_CHANGED, () => {
-        // Always read fresh from context — never cache chatMetadata reference
         const { chatMetadata } = SillyTavern.getContext();
+        console.log(`[${extensionName}] CHAT_CHANGED fired, metadata:`, JSON.stringify(chatMetadata['st_choices']));
         const saved = chatMetadata['st_choices'];
         if (saved?.suggestions?.length > 0) {
             console.log(`[${extensionName}] Restoring suggestions from metadata`);
