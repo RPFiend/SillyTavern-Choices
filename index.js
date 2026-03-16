@@ -41,6 +41,7 @@ function saveSettings() {
 // Generate suggestions using generateQuietPrompt
 async function generateSuggestions() {
     const { generateQuietPrompt, chat } = SillyTavern.getContext();
+    const messageId = chat.length - 1; // Capture HERE, before await
     
     if (!extensionSettings.enabled) {
         console.log(`[${extensionName}] Extension is disabled, skipping suggestion generation`);
@@ -55,9 +56,6 @@ async function generateSuggestions() {
     try {
         console.log('[ST-Choices] Generating suggestions...');
 
-        // Get the last AI message index
-        const messageId = chat.length - 1;
-
         // Prepare the prompt with suggestion number
         let prompt = extensionSettings.llm_prompt.replace('{{suggestionNumber}}', extensionSettings.num_responses);
 
@@ -68,15 +66,19 @@ async function generateSuggestions() {
             extensionSettings.response_length
         );
 
-        if (response) {
-            console.log('[ST-Choices] Raw response:', response);
-            const suggestions = parseSuggestions(response);
-            if (suggestions.length > 0) {
-                renderSuggestions(suggestions, messageId);
-            }
-        } else {
+        if (!response) {
             console.log(`[${extensionName}] No response from generateQuietPrompt`);
+            return;
         }
+
+        console.log('[ST-Choices] Raw response:', response);
+        const suggestions = parseSuggestions(response);
+        if (suggestions.length === 0) {
+            console.log(`[${extensionName}] No suggestions found in response`);
+            return;
+        }
+
+        renderSuggestions(suggestions, messageId);
     } catch (error) {
         console.error(`[${extensionName}] Error generating suggestions:`, error);
     }
@@ -96,55 +98,29 @@ function parseSuggestions(response) {
 
 // Render suggestion buttons in chat
 function renderSuggestions(suggestions, messageId) {
-    const { chat } = SillyTavern.getContext();
-    
-    console.log('[SillyTavern-Choices] Rendering buttons:', suggestions);
-    
-    if (chat.length === 0) {
-        console.log(`[${extensionName}] No messages in chat to append to`);
-        return;
-    }
-
-    // Get the message element using the passed messageId
-    const messageElement = $(`.mes[mesid="${messageId}"]`);
-    
-    if (messageElement.length === 0) {
-        console.error('[SillyTavern-Choices] Message element not found for mesid:', messageId);
-        return;
-    }
-
-    // Remove existing suggestions for this message
-    const existingContainer = messageElement.find('.cyoa-suggestions-container');
-    if (existingContainer.length > 0) {
-        existingContainer.remove();
-    }
-
-    // Create suggestions container
-    const container = document.createElement('div');
-    container.className = 'cyoa-suggestions-container';
-    container.dataset.messageId = messageId;
-
-    // Add label
-    const label = document.createElement('div');
-    label.className = 'cyoa-label';
-    label.textContent = 'Choose Your Next Adventure:';
-    container.appendChild(label);
-
-    // Create button for each suggestion
-    suggestions.forEach((suggestion, index) => {
-        const button = document.createElement('button');
-        button.className = 'cyoa-suggestion-button';
-        button.textContent = `${index + 1}. ${suggestion}`;
-        button.dataset.suggestion = suggestion;
-        button.onclick = () => handleSuggestionClick(suggestion);
-        container.appendChild(button);
-    });
-
-    // Wrap container in jQuery and append to message after .mes_text
-    const $container = $(container);
-    messageElement.find('.mes_text').after($container);
-
-    console.log(`[${extensionName}] Rendered ${suggestions.length} suggestion buttons`);
+    setTimeout(() => {
+        const $message = $(`.mes[mesid="${messageId}"]`);
+        if ($message.length === 0) {
+            console.error('[ST-Choices] Could not find message element for mesid:', messageId);
+            return;
+        }
+        
+        console.log('[SillyTavern-Choices] Rendering buttons:', suggestions);
+        
+        // Remove any existing suggestion container on this message
+        $message.find('.st-choices-container').remove();
+        
+        const $container = $('<div class="st-choices-container"></div>');
+        suggestions.forEach((text, index) => {
+            const $btn = $('<button class="st-choices-btn menu_button"></button>');
+            $btn.text(`${index + 1}. ${text}`);
+            $btn.on('click', () => handleSuggestionClick(text));
+            $container.append($btn);
+        });
+        
+        $message.find('.mes_text').after($container);
+        console.log(`[${extensionName}] Rendered ${suggestions.length} suggestion buttons`);
+    }, 300);
 }
 
 // Handle suggestion button click
