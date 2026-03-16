@@ -1,0 +1,12 @@
+{
+    "display_name": "SillyTavern-Choices",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "SillyTavern-Choices",
+    "version": "1.0.0",
+    "homePage": "https://github.com/username/SillyTavern-Choices",
+    "auto_update": true
+}
