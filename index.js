@@ -8,29 +8,39 @@ const extensionId = "sillytavern_choices";
 // Abort flag to prevent concurrent generation
 let isGenerating = false;
 
-// Save choices to chat metadata (official extension API)
-async function saveChoicesToMetadata(suggestions, messageId) {
+// Save choices to message extra (proven pattern from WTracker)
+async function saveChoicesToMessage(suggestions, messageId) {
     const context = SillyTavern.getContext();
-    if (!context.chatMetadata) {
-        console.error(`[${extensionName}] chatMetadata not available in context`);
+    const message = context.chat[messageId];
+    
+    if (!message) {
+        console.error(`[${extensionName}] Message ${messageId} not found`);
         return;
     }
-    context.chatMetadata['st_choices'] = { suggestions, messageId };
-    if (typeof context.saveSettingsDebounced === 'function') {
-        context.saveSettingsDebounced();
+    
+    message.extra = message.extra || {};
+    message.extra['st_choices'] = suggestions;
+    
+    if (typeof context.saveChat === 'function') {
+        await context.saveChat();
     }
-    console.log(`[${extensionName}] Saved suggestions to chat metadata:`, context.chatMetadata['st_choices']);
+    
+    console.log(`[${extensionName}] Saved suggestions to message ${messageId}:`, suggestions);
 }
 
-// Clear choices from chat metadata
-async function clearChoicesMetadata() {
+// Clear choices from message extra
+async function clearChoicesFromMessage(messageId) {
     const context = SillyTavern.getContext();
-    if (context.chatMetadata && context.chatMetadata['st_choices']) {
-        delete context.chatMetadata['st_choices'];
-        if (typeof context.saveSettingsDebounced === 'function') {
-            context.saveSettingsDebounced();
+    const message = context.chat[messageId];
+    
+    if (message?.extra?.['st_choices']) {
+        delete message.extra['st_choices'];
+        
+        if (typeof context.saveChat === 'function') {
+            await context.saveChat();
         }
-        console.log(`[${extensionName}] Cleared suggestions from chat metadata`);
+        
+        console.log(`[${extensionName}] Cleared suggestions from message ${messageId}`);
     }
 }
 
@@ -133,10 +143,10 @@ function parseSuggestions(response) {
 }
 
 // Render suggestion buttons in chat
-function renderSuggestions(suggestions, messageId, fromPersistence = false) {
-    // Save to chat metadata if this is a fresh generation
+async function renderSuggestions(suggestions, messageId, fromPersistence = false) {
+    // Save to message extra if this is a fresh generation
     if (!fromPersistence) {
-        saveChoicesToMetadata(suggestions, messageId);
+        await saveChoicesToMessage(suggestions, messageId);
     }
 
     setTimeout(() => {
@@ -292,29 +302,57 @@ $(document).ready(async function() {
 
     // Restore suggestions on chat load
     eventSource.on(event_types.CHAT_CHANGED, () => {
-        const { chatMetadata } = SillyTavern.getContext();
-        if (!chatMetadata) {
-            console.log(`[${extensionName}] chatMetadata not available`);
+        const { chat } = SillyTavern.getContext();
+        if (!chat || chat.length === 0) {
+            console.log(`[${extensionName}] Chat not available or empty`);
             return;
         }
         
-        const saved = chatMetadata['st_choices'];
-        console.log(`[${extensionName}] CHAT_CHANGED, chatMetadata:`, JSON.stringify(saved));
+        let chatModified = false;
+        let foundCount = 0;
         
-        if (saved?.suggestions?.length > 0) {
-            console.log(`[${extensionName}] Restoring suggestions from chat metadata`);
-            setTimeout(() => renderSuggestions(saved.suggestions, saved.messageId, true), 600);
+        // Try to restore suggestions from ALL messages (like WTracker does)
+        chat.forEach((message, i) => {
+            try {
+                if (message?.extra?.['st_choices']?.length > 0) {
+                    console.log(`[${extensionName}] Restoring suggestions from message ${i}`, message.extra['st_choices']);
+                    setTimeout(() => renderSuggestions(message.extra['st_choices'], i, true), 600);
+                    foundCount++;
+                }
+            } catch (error) {
+                console.error(`[${extensionName}] Error rendering suggestions on message ${i}, removing data:`, error);
+                // Remove invalid data to prevent future errors
+                if (message?.extra?.['st_choices']) {
+                    delete message.extra['st_choices'];
+                    chatModified = true;
+                }
+            }
+        });
+        
+        if (chatModified) {
+            const { saveChat } = SillyTavern.getContext();
+            if (typeof saveChat === 'function') {
+                saveChat();
+            }
         }
+        
+        console.log(`[${extensionName}] CHAT_CHANGED: Restored ${foundCount} suggestion sets`);
     });
 
     // Clear suggestions on swipe and generation start
-    eventSource.on(event_types.MESSAGE_SWIPED, () => {
+    eventSource.on(event_types.MESSAGE_SWIPED, async (messageId) => {
         $('.st-choices-container').remove();
-        clearChoicesMetadata();
+        await clearChoicesFromMessage(messageId);
     });
-    eventSource.on(event_types.GENERATION_STARTED, () => {
+    eventSource.on(event_types.GENERATION_STARTED, async () => {
+        const { chat } = SillyTavern.getContext();
         $('.st-choices-container').remove();
-        clearChoicesMetadata();
+        
+        // Clear from the last message
+        const lastIdx = chat.length - 1;
+        if (lastIdx >= 0) {
+            await clearChoicesFromMessage(lastIdx);
+        }
     });
 
     // Listen for AI messages
