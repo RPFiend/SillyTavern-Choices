@@ -1,5 +1,6 @@
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
+import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
 
 const extensionName = "SillyTavern-Choices";
 const extensionId = "sillytavern_choices";
@@ -273,20 +274,11 @@ function renderSettings() {
 }
 
 // Register slash command
-function registerSlashCommand() {
-    const command = SlashCommand.fromProps({
-        name: 'cyoa',
-        callback: async () => {
-            console.log(`[${extensionName}] /cyoa command triggered`);
-            await generateSuggestions();
-        },
-        returns: 'none',
-        unnamedArgumentList: [],
-        helpString: 'Manually trigger CYOA suggestion generation',
-    });
-
-    SlashCommandParser.registerCommand(command);
-}
+SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+    name: 'cyoa',
+    callback: () => { generateSuggestions(); return ''; },
+    helpString: 'Manually trigger CYOA story suggestions.',
+}));
 
 // Initialize extension
 $(document).ready(function() {
@@ -294,7 +286,6 @@ $(document).ready(function() {
 
     loadSettings();
     renderSettings();
-    registerSlashCommand();
 
     // Listen for AI messages
     eventSource.on(event_types.MESSAGE_RECEIVED, function(data) {
