@@ -122,9 +122,14 @@ function renderSuggestions(suggestions, messageId, fromPersistence = false) {
         if (!chat[messageId].extra) chat[messageId].extra = {};
         chat[messageId].extra.st_choices = suggestions;
         console.log(`[${extensionName}] Saved suggestions to message ${messageId}:`, chat[messageId].extra.st_choices);
-        // Use the event emitter to trigger ST's save — more reliable than calling saveChat() directly
-        const { eventSource, event_types } = SillyTavern.getContext();
-        eventSource.emit(event_types.SETTINGS_UPDATED);
+        // Trigger ST's chat save directly via the global function
+        if (typeof window.saveChat === 'function') {
+            window.saveChat();
+        } else {
+            // Fallback: fire the chat save event
+            const { eventSource, event_types } = SillyTavern.getContext();
+            eventSource.emit(event_types.CHAT_CHANGED);
+        }
     }
 
     setTimeout(() => {
@@ -295,19 +300,19 @@ $(document).ready(async function() {
     // Clear suggestions on swipe and generation start
     eventSource.on(event_types.MESSAGE_SWIPED, (messageId) => {
         $('.st-choices-container').remove();
-        const { chat, saveChat } = SillyTavern.getContext();
+        const { chat } = SillyTavern.getContext();
         if (chat[messageId]?.extra?.st_choices) {
             delete chat[messageId].extra.st_choices;
-            saveChat();
+            triggerChatSave();
         }
     });
     eventSource.on(event_types.GENERATION_STARTED, () => {
         $('.st-choices-container').remove();
-        const { chat, saveChat } = SillyTavern.getContext();
+        const { chat } = SillyTavern.getContext();
         const lastMsg = chat[chat.length - 1];
         if (lastMsg?.extra?.st_choices) {
             delete lastMsg.extra.st_choices;
-            saveChat();
+            triggerChatSave();
         }
     });
 
