@@ -1,4 +1,4 @@
-# SillyTavern-Choices
+# SillyTavern Story Suggestions Extension – Choices!
 
 After each AI message, get a set of clickable story suggestions. Pick one and your character acts it out automatically.
 
