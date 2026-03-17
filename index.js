@@ -14,7 +14,7 @@ let isGenerating = false;
 
 const defaultSettings = Object.freeze({
     enabled: true,
-    llm_prompt: `[System: Pause roleplay. Output ONLY {{suggestionNumber}} story beat suggestions, one per line, each wrapped in backticks. No other text, no numbering, no labels. Format exactly like this: `Suggestion text goes here.` `Another suggestion text here.` Each suggestion should be a single sentence from {{user}}'s perspective. Vary the tone: some should ease tension, some should raise it, some should be unexpected, some should advance the scene. Any response that does not follow this exact format will be discarded.],
+    llm_prompt: `[System: Pause roleplay. Output ONLY {{suggestionNumber}} story beat suggestions, one per line, each wrapped in backticks. No other text, no numbering, no labels. Format exactly like this: \`Suggestion text goes here.\` \`Another suggestion text here.\` Each suggestion should be a single sentence from {{user}}'s perspective. Vary the tone: some should ease tension, some should raise it, some should be unexpected, some should advance the scene. Any response that does not follow this exact format will be discarded.]`,
     llm_prompt_impersonate: '`{{suggestionText}}`',
     apply_wi_an: true,
     num_responses: 5,
