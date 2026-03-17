@@ -3,7 +3,7 @@ import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
 
 const MODULE_NAME = 'sillytavern_choices';
-const EXTENSION_NAME = 'SillyTavern-Choices';
+const EXTENSION_NAME = 'SillyTavern - Choices!';
 const STORAGE_KEY = 'st_choices';
 
 let isGenerating = false;
