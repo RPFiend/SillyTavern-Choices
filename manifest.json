@@ -1,11 +1,11 @@
 {
-    "display_name": "SillyTavern Choices",
+    "display_name": "Choices!",
     "loading_order": 10,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "style.css",
-    "author": "SillyTavern-Choices",
+    "author": "RP|Fiend",
     "version": "1.0.0",
     "homePage": "https://github.com/RPFiend/SillyTavern-Choices",
     "auto_update": true
