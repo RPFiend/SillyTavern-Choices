@@ -14,7 +14,7 @@ let isGenerating = false;
 
 const defaultSettings = Object.freeze({
     enabled: true,
-    llm_prompt: `Stop roleplay now and provide a response with {{suggestionNumber}} brief distinct single-sentence suggestions for next story beat on {{user}} perspective. Ensure each suggestion aligns with its corresponding description: 1. Eases tension and improves protagonist's situation 2. Creates or increases tension and worsens protagonist's situation 3. Leads directly but believably to a wild twist or super weird event 4. Slowly moves the story forward without ending the current scene 5. Pushes the story forward, potentially ending the current scene if feasible Each suggestion surrounded by \`\` tags. E.g: suggestion_1 suggestion_2 ... Do not include any other content in your response.`,
+    llm_prompt: `[System: Pause roleplay. Output ONLY {{suggestionNumber}} story beat suggestions, one per line, each wrapped in backticks. No other text, no numbering, no labels. Format exactly like this: `Suggestion text goes here.` `Another suggestion text here.` Each suggestion should be a single sentence from {{user}}'s perspective. Vary the tone: some should ease tension, some should raise it, some should be unexpected, some should advance the scene. Any response that does not follow this exact format will be discarded.],
     llm_prompt_impersonate: '`{{suggestionText}}`',
     apply_wi_an: true,
     num_responses: 5,
